@@ -1,19 +1,23 @@
 """
 Interfaz web para control de agentes browser-use usando Gradio
+Soporta múltiples proveedores de LLM (OpenAI o Groq)
 """
 import os
 import asyncio
 import gradio as gr
 from browser_use import Agent
-from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
+from model_provider import ModelProvider
 
 load_dotenv()
 
-# Verificar que la API key esté configurada
-if not os.getenv("OPENAI_API_KEY"):
-    print("⚠️ OPENAI_API_KEY no encontrada en variables de entorno")
-    print("Por favor, configura el archivo .env con tu API key")
+# Configurar proveedor de modelo
+provider_name = os.getenv("LLM_PROVIDER", "auto")
+model_provider = ModelProvider(provider_name)
+
+# Obtener información del proveedor para mostrar
+provider_info = model_provider.get_provider_info()
+AVAILABLE_MODELS = provider_info['models'][provider_info['provider']]
 
 class BrowserAgent:
     """Clase para gestionar agentes de navegador"""
@@ -24,7 +28,7 @@ class BrowserAgent:
         self.running = False
         self.agent = None
     
-    async def run_agent(self, task, model="gpt-4o", headless=False, max_iterations=10):
+    async def run_agent(self, task, model=AVAILABLE_MODELS[0], headless=False, max_iterations=10):
         """Ejecutar agente con la tarea especificada"""
         self.running = True
         
@@ -32,10 +36,13 @@ class BrowserAgent:
         if not os.path.exists("results"):
             os.makedirs("results")
         
+        # Obtener el modelo LLM configurado para el proveedor actual
+        llm = model_provider.get_llm(model)
+        
         # Inicializar el agente
         self.agent = Agent(
             task=task,
-            llm=ChatOpenAI(model=model),
+            llm=llm,
             headless=not headless,  # Invertir porque en la UI 'headless=True' significa mostrar navegador
             output_to_file=True,
             output_dir="results",
@@ -48,6 +55,7 @@ class BrowserAgent:
         
         # Construir respuesta con enlaces a archivos generados
         response = f"✅ Tarea completada: {task}\n\n"
+        response += f"Proveedor: {provider_info['provider'].upper()} | Modelo: {model}\n\n"
         response += f"Resultado:\n{self.result}\n\n"
         
         # Agregar enlaces a archivos generados
@@ -95,13 +103,16 @@ def handle_submit(task, model, show_browser, max_iterations):
     )
     
     # Retornar mensaje inicial
-    return "🚀 Iniciando agente...\nEsto puede tomar varios minutos dependiendo de la complejidad de la tarea."
+    provider_name = provider_info['provider'].upper()
+    return f"🚀 Iniciando agente con {provider_name} ({model})...\nEsto puede tomar varios minutos dependiendo de la complejidad de la tarea."
 
 # Crear interfaz Gradio
 with gr.Blocks(title="Browser-Use Demo") as demo:
-    gr.Markdown("# 🤖 Browser-Use - Control de navegador con IA")
-    gr.Markdown("""
+    gr.Markdown(f"# 🤖 Browser-Use - Control de navegador con {provider_info['provider'].upper()}")
+    gr.Markdown(f"""
     Esta interfaz permite ejecutar agentes de IA que controlan un navegador web.
+    Proveedor actual: **{provider_info['provider'].upper()}**
+    
     Ingresa una tarea en lenguaje natural y observa cómo el agente la ejecuta.
     """)
     
@@ -115,9 +126,9 @@ with gr.Blocks(title="Browser-Use Demo") as demo:
             
             with gr.Row():
                 model_dropdown = gr.Dropdown(
-                    label="Modelo de IA",
-                    choices=["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"],
-                    value="gpt-4o"
+                    label=f"Modelo de {provider_info['provider'].upper()}",
+                    choices=AVAILABLE_MODELS,
+                    value=AVAILABLE_MODELS[0]
                 )
                 
                 show_browser = gr.Checkbox(
@@ -150,6 +161,14 @@ with gr.Blocks(title="Browser-Use Demo") as demo:
     - Busca información sobre 3 destinos turísticos populares en México y guarda imágenes representativas
     - Encuentra los 5 smartphones más vendidos, compara sus características y crea una tabla
     - Busca recetas de postres con chocolate y guarda la que tenga mejor valoración
+    """)
+    
+    gr.Markdown(f"""
+    ## ℹ️ Información del proveedor
+    
+    - Proveedor activo: **{provider_info['provider'].upper()}**
+    - Modelos disponibles: {', '.join(AVAILABLE_MODELS)}
+    - Para cambiar el proveedor, configura la variable `LLM_PROVIDER` en el archivo `.env`
     """)
 
 # Iniciar la aplicación
