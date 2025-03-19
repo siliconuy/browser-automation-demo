@@ -1,12 +1,13 @@
 """
 Ejemplo de agente con funciones personalizadas para extender capacidades
+Soporta múltiples proveedores de LLM (OpenAI o Groq)
 """
 import os
 import json
 import asyncio
 from browser_use import Agent, function_registry
-from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
+from model_provider import ModelProvider
 
 load_dotenv()
 
@@ -78,6 +79,20 @@ async def run_custom_agent():
     """
     Ejecuta un agente con funciones personalizadas
     """
+    # Configurar proveedor de modelo
+    provider_name = os.getenv("LLM_PROVIDER", "auto")
+    model_provider = ModelProvider(provider_name)
+    
+    # Obtener información del proveedor para mostrar
+    provider_info = model_provider.get_provider_info()
+    print(f"Usando proveedor: {provider_info['provider'].upper()}")
+    
+    # Modelo a usar (se mapeará automáticamente si se usa Groq)
+    model_name = "gpt-4o"
+    
+    # Obtener el LLM configurado
+    llm = model_provider.get_llm(model_name)
+    
     agent = Agent(
         task="""
         Busca información sobre los 3 lenguajes de programación más populares 
@@ -89,7 +104,7 @@ async def run_custom_agent():
         - Usos comunes
         - Página oficial
         """,
-        llm=ChatOpenAI(model="gpt-4o"),
+        llm=llm,
         headless=False,
         output_to_file=True,
         output_dir="results",
